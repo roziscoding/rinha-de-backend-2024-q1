@@ -1,0 +1,16 @@
+{
+  "fmt": {
+    "lineWidth": 120
+  },
+  "imports": {
+    "zod/": "https://deno.land/x/zod@v3.22.4/",
+    "oak/": "https://deno.land/x/oak@v13.1.0/",
+    "std/": "https://deno.land/std@0.215.0/",
+    "kysely": "https://esm.sh/kysely@0.27.2",
+    "kysely_deno_postgres_dialect/": "https://deno.land/x/kysely_deno_postgres_dialect@v0.27.0/"
+  },
+  "tasks": {
+    "start": "deno run --allow-net --allow-read=.env,.env.defaults,.env.example --allow-env server.ts",
+    "dev": "deno run --allow-net --allow-read=.env,.env.defaults,.env.example --allow-env --watch server.ts"
+  }
+}

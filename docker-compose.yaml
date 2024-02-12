@@ -1,0 +1,49 @@
+version: '3'
+services:
+  app01:
+    image: roziscoding/rinhadebackend-2024-q1-server
+    build: ./server/
+    ports:
+      - 3000:3000
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_USERNAME=rinhadebackend
+      - DB_PASSWORD=rinha
+      - DB_NAME=rinhadebackend
+      - SERVER_PORT=3000
+  app02:
+    image: roziscoding/rinhadebackend-2024-q1-server
+    ports:
+      - 3001:3000
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_USERNAME=rinhadebackend
+      - DB_PASSWORD=rinha
+      - DB_NAME=rinhadebackend
+      - SERVER_PORT=3000
+
+  nginx:
+    image: roziscoding/rinhadebackend-2024-q1-nginx
+    build: ./nginx/
+    ports:
+      - 9999:9999
+    depends_on:
+      - app01
+      - app02
+
+  db:
+    image: postgres
+    environment:
+      POSTGRES_USER: rinhadebackend
+      POSTGRES_PASSWORD: rinha
+      POSTGRES_DB: rinhadebackend
+    volumes:
+      - data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+volumes:
+  data:
