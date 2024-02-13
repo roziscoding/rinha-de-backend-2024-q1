@@ -11,6 +11,7 @@
   },
   "tasks": {
     "start": "deno run --allow-net --allow-read=.env,.env.defaults,.env.example,script.sql --allow-env server.ts",
-    "dev": "deno run --allow-net --allow-read=.env,.env.defaults,.env.example,script.sql --allow-env --watch server.ts"
+    "dev": "deno run --allow-net --allow-read=.env,.env.defaults,.env.example,script.sql --allow-env --watch server.ts",
+    "db:init": "deno run -A init-db.ts"
   }
 }

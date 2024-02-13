@@ -1,7 +1,6 @@
 import { HttpError } from "./HttpError.ts";
 import { type AppConfig } from "./config.ts";
 import { getConnection } from "./database/connection.ts";
-import { SCRIPT } from "./database/script.ts";
 import { Oak, z } from "./deps.ts";
 import { Transaction, TransactionCreationParams } from "./entities/transaction.ts";
 
@@ -9,7 +8,7 @@ export async function getApp(config: AppConfig) {
   const app = new Oak.Application();
   const db = await getConnection(config.db);
 
-  if (config.server.runScript) await SCRIPT.execute(db);
+  // if (config.server.runScript) await SCRIPT.execute(db);
 
   app.use(async (ctx, next) => {
     try {
@@ -34,11 +33,16 @@ export async function getApp(config: AppConfig) {
   });
 
   app.use(async (ctx, next) => {
+    Deno.stdout.write(
+      new TextEncoder().encode(`Received ${ctx.request.method} ${ctx.request.url}\n`),
+    );
     const start = Date.now();
     await next();
     const ms = Date.now() - start;
     Deno.stdout.write(
-      new TextEncoder().encode(`${ctx.request.method} ${ctx.request.url} - ${ctx.response.status} - ${ms}ms\n`),
+      new TextEncoder().encode(
+        `Responded ${ctx.request.method} ${ctx.request.url} with ${ctx.response.status} in ${ms}ms\n`,
+      ),
     );
   });
 
@@ -46,59 +50,54 @@ export async function getApp(config: AppConfig) {
 
   router.post("/clientes/:id/transacoes", async (ctx) => {
     const { id } = z.object({ id: z.coerce.number() }).parse(ctx.params);
+    const client = await db.selectFrom("client").selectAll().where("id", "=", id).executeTakeFirst();
+
+    if (!client) throw new HttpError(404, "client_not_found", "Client not found");
+
+    const { descricao, tipo, valor } = TransactionCreationParams.parse(await ctx.request.body.json());
+
+    if (tipo === "d" && Math.abs(client.balance - valor) > client.credit_limit) {
+      const amountExceeded = Math.abs(client.credit_limit + client.balance - valor);
+      throw new HttpError(
+        422,
+        "limit_exceeded",
+        `Transaction exceeds client limit by ${amountExceeded}`,
+        {
+          valorExcedente: amountExceeded,
+          saldo: client.balance,
+          limite: client.credit_limit,
+          limiteRestante: client.credit_limit + client.balance,
+        },
+      );
+    }
+
+    const transaction = {
+      id: crypto.randomUUID(),
+      descricao,
+      tipo,
+      valor,
+      realizada_em: new Date(),
+      client_id: id,
+    } satisfies Transaction;
+
     await db
-      .transaction()
-      .setIsolationLevel("read committed")
-      .execute(async (trx) => {
-        const client = await db.selectFrom("client").selectAll().where("id", "=", id).executeTakeFirst();
+      .insertInto("transaction")
+      .values(transaction)
+      .executeTakeFirst();
 
-        if (!client) throw new HttpError(404, "client_not_found", "Client not found");
+    const newBalance = client.balance + (tipo === "d" ? -valor : valor);
 
-        const { descricao, tipo, valor } = TransactionCreationParams.parse(await ctx.request.body.json());
+    await db.updateTable("client")
+      .set("balance", (eb) => eb("balance", "+", tipo === "d" ? -valor : valor))
+      .where(
+        "id",
+        "=",
+        id,
+      )
+      .execute();
 
-        if (tipo === "d" && Math.abs(client.balance - valor) > client.credit_limit) {
-          const amountExceeded = Math.abs(client.credit_limit + client.balance - valor);
-          throw new HttpError(
-            422,
-            "limit_exceeded",
-            `Transaction exceeds client limit by ${amountExceeded}`,
-            {
-              valorExcedente: amountExceeded,
-              saldo: client.balance,
-              limite: client.credit_limit,
-              limiteRestante: client.credit_limit + client.balance,
-            },
-          );
-        }
-
-        const transaction = {
-          id: crypto.randomUUID(),
-          descricao,
-          tipo,
-          valor,
-          realizada_em: new Date(),
-          client_id: id,
-        } satisfies Transaction;
-
-        await trx
-          .insertInto("transaction")
-          .values(transaction)
-          .executeTakeFirst();
-
-        const newBalance = client.balance + (tipo === "d" ? -valor : valor);
-
-        await trx.updateTable("client")
-          .set("balance", (eb) => eb("balance", "+", tipo === "d" ? -valor : valor))
-          .where(
-            "id",
-            "=",
-            id,
-          )
-          .execute();
-
-        ctx.response.status = 200;
-        ctx.response.body = { limite: client.credit_limit, saldo: newBalance };
-      });
+    ctx.response.status = 200;
+    ctx.response.body = { limite: client.credit_limit, saldo: newBalance };
   });
 
   router.get("/clientes/:id/extrato", async (ctx) => {

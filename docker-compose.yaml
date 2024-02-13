@@ -27,14 +27,23 @@ services:
       - DB_NAME=rinhadebackend
       - SERVER_PORT=3000
 
-  nginx:
-    image: roziscoding/rinhadebackend-2024-q1-nginx
-    build: ./nginx/
+  haproxy:
+    image: roziscoding/rinhadebackend-2024-q1-proxy
+    build: ./haproxy/
     ports:
-      - 9999:9999
+      - "9999:9999"
     depends_on:
       - app01
       - app02
+
+  # nginx:
+  #   image: roziscoding/rinhadebackend-2024-q1-nginx
+  #   build: ./nginx/
+  #   ports:
+  #     - 9999:9999
+  #   depends_on:
+  #     - app01
+  #     - app02
 
   db:
     image: postgres
