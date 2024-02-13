@@ -11,6 +11,7 @@ export const AppConfig = z.object({
   DB_NAME: z.string(),
   DB_PORT: z.coerce.number().default(5432),
   SERVER_PORT: z.coerce.number().default(3000),
+  SERVER_RUN_SCRIPT: z.coerce.boolean().default(false),
 }).transform((envs) => ({
   db: {
     host: envs.DB_HOST,
@@ -21,6 +22,7 @@ export const AppConfig = z.object({
   },
   server: {
     port: envs.SERVER_PORT,
+    runScript: envs.SERVER_RUN_SCRIPT,
   },
 }));
 export const config = AppConfig.parse(Deno.env.toObject());

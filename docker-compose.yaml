@@ -13,6 +13,7 @@ services:
       - DB_PASSWORD=rinha
       - DB_NAME=rinhadebackend
       - SERVER_PORT=3000
+      - SERVER_RUN_SCRIPT=true
   app02:
     image: roziscoding/rinhadebackend-2024-q1-server
     ports:

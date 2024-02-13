@@ -1,12 +1,15 @@
 import { HttpError } from "./HttpError.ts";
 import { type AppConfig } from "./config.ts";
 import { getConnection } from "./database/connection.ts";
+import { SCRIPT } from "./database/script.ts";
 import { Oak, z } from "./deps.ts";
 import { Transaction, TransactionCreationParams } from "./entities/transaction.ts";
 
 export async function getApp(config: AppConfig) {
   const app = new Oak.Application();
   const db = await getConnection(config.db);
+
+  if (config.server.runScript) await SCRIPT.execute(db);
 
   app.use(async (ctx, next) => {
     try {
@@ -24,7 +27,7 @@ export async function getApp(config: AppConfig) {
         return;
       }
 
-      console.error(err);
+      Deno.stderr.write(new TextEncoder().encode(err + "\n"));
       ctx.response.status = 500;
       ctx.response.body = { status: 500, code: "internal_error", message: "Internal server error" };
     }
@@ -34,7 +37,9 @@ export async function getApp(config: AppConfig) {
     const start = Date.now();
     await next();
     const ms = Date.now() - start;
-    console.log(`${ctx.request.method} ${ctx.request.url} - ${ctx.response.status} - ${ms}ms`);
+    Deno.stdout.write(
+      new TextEncoder().encode(`${ctx.request.method} ${ctx.request.url} - ${ctx.response.status} - ${ms}ms\n`),
+    );
   });
 
   const router = new Oak.Router();
@@ -43,7 +48,7 @@ export async function getApp(config: AppConfig) {
     const { id } = z.object({ id: z.coerce.number() }).parse(ctx.params);
     await db
       .transaction()
-      .setIsolationLevel("repeatable read")
+      .setIsolationLevel("read committed")
       .execute(async (trx) => {
         const client = await db.selectFrom("client").selectAll().where("id", "=", id).executeTakeFirst();
 
@@ -54,7 +59,7 @@ export async function getApp(config: AppConfig) {
         if (tipo === "d" && Math.abs(client.balance - valor) > client.credit_limit) {
           const amountExceeded = Math.abs(client.credit_limit + client.balance - valor);
           throw new HttpError(
-            403,
+            422,
             "limit_exceeded",
             `Transaction exceeds client limit by ${amountExceeded}`,
             {
@@ -83,7 +88,7 @@ export async function getApp(config: AppConfig) {
         const newBalance = client.balance + (tipo === "d" ? -valor : valor);
 
         await trx.updateTable("client")
-          .set("balance", newBalance)
+          .set("balance", (eb) => eb("balance", "+", tipo === "d" ? -valor : valor))
           .where(
             "id",
             "=",
@@ -99,47 +104,31 @@ export async function getApp(config: AppConfig) {
   router.get("/clientes/:id/extrato", async (ctx) => {
     const { id } = z.object({ id: z.coerce.number() }).parse(ctx.params);
 
-    const clientTransactions = await db
-      .selectFrom("client")
-      .leftJoin("transaction", "client.id", "transaction.client_id")
-      .select([
-        "client.id",
-        "client.credit_limit",
-        "client.balance",
-        "transaction.client_id",
-        "transaction.valor as valor",
-        "transaction.tipo as tipo",
-        "transaction.descricao as descricao",
-        "transaction.realizada_em as realizada_em",
-      ])
-      .where("client.id", "=", id)
-      .limit(10)
-      .execute();
-
-    const [client] = clientTransactions;
+    const client = await db.selectFrom("client").select(["balance", "credit_limit"]).where("id", "=", id)
+      .executeTakeFirst();
 
     if (!client) throw new HttpError(404, "client_not_found", `Client with id \`${id}\` does not exist`);
 
-    const transactions = clientTransactions.filter((t) => t.valor).map((t) => ({
-      valor: t.valor,
-      tipo: t.tipo,
-      descricao: t.descricao,
-      realizada_em: t.realizada_em,
-    }));
+    const transactions = await db
+      .selectFrom("transaction")
+      .select(["valor", "tipo", "descricao", "realizada_em"])
+      .where("client_id", "=", id)
+      .limit(10)
+      .execute();
 
     ctx.response.status = 200;
     ctx.response.body = {
-      total: client.balance,
-      data_extrato: new Date(),
-      limite: client.credit_limit,
+      saldo: {
+        total: client.balance,
+        data_extrato: new Date(),
+        limite: client.credit_limit,
+      },
       ultimasTransacoes: transactions,
     };
   });
 
   router.get("/clientes", async (ctx) => {
-    console.log("entered /clientes");
     const clients = await db.selectFrom("client").selectAll().execute();
-    console.log("clients:", clients);
     ctx.response.status = 200;
     ctx.response.body = clients;
   });

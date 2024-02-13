@@ -2,7 +2,7 @@ import { z } from "../deps.ts";
 
 export const Transaction = z.object({
   id: z.string().uuid(),
-  valor: z.number(),
+  valor: z.number().int().positive(),
   tipo: z.enum(["c", "d"]),
   descricao: z.string(),
   realizada_em: z.date(),
