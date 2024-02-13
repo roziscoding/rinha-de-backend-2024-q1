@@ -50,7 +50,12 @@ export async function getApp(config: AppConfig) {
 
   router.post("/clientes/:id/transacoes", async (ctx) => {
     const { id } = z.object({ id: z.coerce.number() }).parse(ctx.params);
-    const client = await db.selectFrom("client").selectAll().where("id", "=", id).executeTakeFirst();
+    const client = await db
+      .selectFrom("client")
+      .forUpdate()
+      .selectAll()
+      .where("id", "=", id)
+      .executeTakeFirst();
 
     if (!client) throw new HttpError(404, "client_not_found", "Client not found");
 
